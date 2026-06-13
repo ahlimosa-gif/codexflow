@@ -4,6 +4,15 @@ CodexFlow Smart is a Codex Skill for safer, faster local project work. It helps 
 
 This repository is itself the installable skill folder.
 
+## About / 關於
+
+**English:** CodexFlow Smart is an Ah Limosa Codex Skill that helps AI coding sessions stay focused, safer, and easier to verify. It guides Codex to understand a project first, choose the right risk mode, make minimal changes, and record what was verified.
+
+**中文：** CodexFlow Smart 是 Ah Limosa 的 Codex Skill，幫助 AI 開發流程更聚焦、更安全、更容易驗證。它會引導 Codex 先理解專案、判斷風險模式、做最小有效修改，並記錄已完成的驗證結果。
+
+Website: [ahlimosa.com](https://ahlimosa.com)  
+網站：[ahlimosa.com](https://ahlimosa.com)
+
 ## Why This Skill Exists
 
 AI coding sessions often slow down or go wrong because the assistant starts in the wrong folder, reads too much context, misses project rules, edits before understanding risk, or finishes without a real verification trail.
