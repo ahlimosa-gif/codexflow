@@ -33,23 +33,34 @@ Use CodexFlow Smart for:
 
 ## Install
 
-Clone this repository into your Codex skills directory.
+Clone this repository into your Codex skills directory. Personal skills should live in `$HOME/.agents/skills`; repo-scoped skills can live in `.agents/skills` inside the project that should use them.
 
-Windows:
+Recommended Windows personal install:
 
 ```powershell
-git clone https://github.com/ahlimosa-gif/codexflow.git "$env:USERPROFILE\.codex\skills\codexflow"
+mkdir "$env:USERPROFILE\.agents\skills" -Force
+git clone https://github.com/ahlimosa-gif/codexflow.git "$env:USERPROFILE\.agents\skills\codexflow-smart"
+```
+
+Recommended repo-scoped install:
+
+```powershell
+mkdir ".agents\skills" -Force
+git clone https://github.com/ahlimosa-gif/codexflow.git ".agents\skills\codexflow-smart"
 ```
 
 macOS/Linux:
 
 ```bash
-git clone https://github.com/ahlimosa-gif/codexflow.git ~/.codex/skills/codexflow
+mkdir -p ~/.agents/skills
+git clone https://github.com/ahlimosa-gif/codexflow.git ~/.agents/skills/codexflow-smart
 ```
 
 Restart Codex after installing so the skill list refreshes.
 
 ## Quick Use
+
+This skill disables implicit invocation in `agents/openai.yaml`, so Codex should use it only when you explicitly ask for `$codexflow-smart`.
 
 Ask Codex to use the skill:
 
@@ -95,6 +106,15 @@ CodexFlow Smart uses the lightest mode that can safely solve the request:
 - `Recover`: restore previous good behavior from evidence
 - `Import`: import external CSV, spreadsheet, PDF-extracted, scraped, or uploaded data into a real system
 
+## When Not To Use
+
+Do not reach for this skill when the task is intentionally tiny or conceptual:
+
+- changing one line of copy
+- generating a quick component prototype
+- asking a coding concept question
+- doing a small UI tweak where the full project workflow would slow you down
+
 ## Project Memory
 
 The skill supports this root-level memory set:
@@ -111,6 +131,24 @@ checkpoints/
 ```
 
 Memory is meant to stay short. Store conclusions, current source of truth, verification commands, decisions, and follow-ups. Do not store long logs, full diffs, stack traces, or temporary guesses.
+
+CodexFlow Smart does not replace `AGENTS.md`. Keep project rules in `AGENTS.md`, and keep durable project state in the memory files.
+
+For a repo-scoped install, the recommended structure is:
+
+```text
+your-project/
+  AGENTS.md
+  MEMORY_INDEX.md
+  NEXT_TASKS.md
+  PROJECT_CONTEXT.md
+  PROGRESS.md
+  DECISIONS.md
+  VERIFICATION.md
+  .agents/
+    skills/
+      codexflow-smart/
+```
 
 ## Scripts
 
@@ -141,7 +179,7 @@ python scripts/make_checkpoint.py --root <project-root> --title "Risky task"
 ## Repository Structure
 
 ```text
-codexflow/
+codexflow-smart/
   SKILL.md
   agents/
     openai.yaml
