@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodexFlowSmart"
+  short_description: "Smarter project workflow for efficient coding"
+  default_prompt: "Use $codexflow-smart to inspect this project, choose the lightest safe mode, read only needed memory, make a minimal verified change, and update project memory."
