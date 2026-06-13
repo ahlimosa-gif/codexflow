@@ -38,13 +38,13 @@ Clone this repository into your Codex skills directory.
 Windows:
 
 ```powershell
-git clone https://github.com/ahlimosa-gif/codexflow.git "$env:USERPROFILE\.codex\skills\codexflow-smart"
+git clone https://github.com/ahlimosa-gif/codexflow.git "$env:USERPROFILE\.codex\skills\codexflow"
 ```
 
 macOS/Linux:
 
 ```bash
-git clone https://github.com/ahlimosa-gif/codexflow.git ~/.codex/skills/codexflow-smart
+git clone https://github.com/ahlimosa-gif/codexflow.git ~/.codex/skills/codexflow
 ```
 
 Restart Codex after installing so the skill list refreshes.
