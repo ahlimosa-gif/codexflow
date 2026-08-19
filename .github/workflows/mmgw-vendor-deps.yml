@@ -1,0 +1,142 @@
+name: MMGW Vendor Dependencies
+
+on:
+  push:
+    branches:
+      - tmp/mmgw-vendor-20260819
+
+permissions:
+  contents: read
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Create exact package input
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > package.json <<'JSON'
+          {
+            "name": "mmgw-vendor-staging",
+            "version": "1.0.0",
+            "private": true,
+            "type": "module",
+            "engines": { "node": ">=20" },
+            "dependencies": {
+              "ajv": "^8.20.0",
+              "ajv-formats": "^3.0.1"
+            },
+            "devDependencies": {
+              "json-schema-to-ts": "^3.1.1",
+              "typescript": "^5.8.3",
+              "yaml": "^2.9.0",
+              "@types/node": "^22.0.0"
+            }
+          }
+          JSON
+          node --version
+          npm --version
+
+      - name: Resolve and install exact closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p vendor/tarballs vendor/npm-cache
+          npm install --package-lock-only --ignore-scripts --audit=false --fund=false
+          npm ci --ignore-scripts --audit=false --fund=false --cache vendor/npm-cache
+
+      - name: Pack every exact dependency tarball and build manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/vendor.mjs <<'JS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import crypto from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const entries = [];
+          const seen = new Set();
+          for (const [pkgPath, pkg] of Object.entries(lock.packages ?? {})) {
+            if (!pkgPath || !pkgPath.includes('node_modules/') || pkg.link || !pkg.version) continue;
+            const name = pkgPath.slice(pkgPath.lastIndexOf('node_modules/') + 'node_modules/'.length);
+            const key = `${name}@${pkg.version}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const raw = execFileSync('npm', [
+              'pack', key,
+              '--pack-destination', 'vendor/tarballs',
+              '--ignore-scripts', '--json',
+              '--cache', 'vendor/npm-cache',
+              '--audit=false', '--fund=false'
+            ], { encoding: 'utf8' });
+            const packed = JSON.parse(raw);
+            if (!Array.isArray(packed) || !packed[0]?.filename) throw new Error(`npm pack returned no filename for ${key}`);
+            const file = packed[0].filename;
+            const bytes = fs.readFileSync(path.join('vendor/tarballs', file));
+            const sha512 = crypto.createHash('sha512').update(bytes).digest('hex');
+            entries.push({
+              package: name,
+              version: pkg.version,
+              file,
+              sha512,
+              npmIntegrity: pkg.integrity ?? null,
+              npmResolved: pkg.resolved ?? null
+            });
+          }
+          entries.sort((a,b) => `${a.package}@${a.version}`.localeCompare(`${b.package}@${b.version}`));
+          const lockBytes = fs.readFileSync('package-lock.json');
+          const packageLockSha512 = crypto.createHash('sha512').update(lockBytes).digest('hex');
+          const manifest = {
+            version: 1,
+            generatedAt: new Date().toISOString(),
+            node: process.version,
+            npm: execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
+            packageLockSha512,
+            packageCount: entries.length,
+            tarballs: entries
+          };
+          fs.writeFileSync('vendor/manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+          console.log(`Packed ${entries.length} exact package tarballs`);
+          for (const e of entries) console.log(`${e.package}@${e.version} -> ${e.file}`);
+          JS
+          node /tmp/vendor.mjs
+          for f in vendor/tarballs/*.tgz; do
+            npm cache add "$f" --cache vendor/npm-cache --offline --audit=false --fund=false --registry https://registry.invalid/
+          done
+
+      - name: Prove cache-only installation
+        shell: bash
+        env:
+          NPM_CONFIG_OFFLINE: "true"
+          NPM_CONFIG_REGISTRY: "https://registry.invalid/"
+        run: |
+          set -euo pipefail
+          rm -rf node_modules
+          npm ci --offline --ignore-scripts --audit=false --fund=false --cache vendor/npm-cache --registry https://registry.invalid/
+          npm ls --all
+
+      - name: Record checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha512sum package-lock.json vendor/manifest.json vendor/tarballs/*.tgz > vendor/SHA512SUMS
+          du -sh vendor vendor/npm-cache vendor/tarballs
+          cat vendor/manifest.json
+
+      - name: Upload vendor bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmgw-vendor-deps
+          path: |
+            package-lock.json
+            vendor/manifest.json
+            vendor/SHA512SUMS
+            vendor/tarballs
+            vendor/npm-cache
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
