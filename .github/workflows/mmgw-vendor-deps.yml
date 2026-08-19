@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - tmp/mmgw-vendor-20260819
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -19,7 +22,7 @@ jobs:
           set -euo pipefail
           cat > package.json <<'JSON'
           {
-            "name": "mmgw-vendor-staging",
+            "name": "@gateway/multi-model-v1-contract",
             "version": "1.0.0",
             "private": true,
             "type": "module",
@@ -39,15 +42,14 @@ jobs:
           node --version
           npm --version
 
-      - name: Resolve and install exact closure
+      - name: Resolve exact dependency closure
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p vendor/tarballs vendor/npm-cache
           npm install --package-lock-only --ignore-scripts --audit=false --fund=false
-          npm ci --ignore-scripts --audit=false --fund=false --cache vendor/npm-cache
 
-      - name: Pack every exact dependency tarball and build manifest
+      - name: Download exact published tarballs and build manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -60,33 +62,40 @@ jobs:
           const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
           const entries = [];
           const seen = new Set();
+          const safeName = (name, version) => `${name.replace(/^@/, '').replaceAll('/', '__')}-${version}.tgz`;
+
           for (const [pkgPath, pkg] of Object.entries(lock.packages ?? {})) {
             if (!pkgPath || !pkgPath.includes('node_modules/') || pkg.link || !pkg.version) continue;
             const name = pkgPath.slice(pkgPath.lastIndexOf('node_modules/') + 'node_modules/'.length);
             const key = `${name}@${pkg.version}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            const raw = execFileSync('npm', [
-              'pack', key,
-              '--pack-destination', 'vendor/tarballs',
-              '--ignore-scripts', '--json',
-              '--cache', 'vendor/npm-cache',
-              '--audit=false', '--fund=false'
-            ], { encoding: 'utf8' });
-            const packed = JSON.parse(raw);
-            if (!Array.isArray(packed) || !packed[0]?.filename) throw new Error(`npm pack returned no filename for ${key}`);
-            const file = packed[0].filename;
-            const bytes = fs.readFileSync(path.join('vendor/tarballs', file));
-            const sha512 = crypto.createHash('sha512').update(bytes).digest('hex');
+            if (typeof pkg.resolved !== 'string' || !pkg.resolved.startsWith('https://registry.npmjs.org/')) {
+              throw new Error(`Missing canonical npm resolved URL for ${key}: ${pkg.resolved ?? '<none>'}`);
+            }
+            if (typeof pkg.integrity !== 'string' || !pkg.integrity.startsWith('sha512-')) {
+              throw new Error(`Missing sha512 npm integrity for ${key}`);
+            }
+            const response = await fetch(pkg.resolved, { redirect: 'follow' });
+            if (!response.ok) throw new Error(`Download failed ${response.status} for ${key}`);
+            const bytes = Buffer.from(await response.arrayBuffer());
+            const digest = crypto.createHash('sha512').update(bytes).digest();
+            const expected = Buffer.from(pkg.integrity.slice('sha512-'.length), 'base64');
+            if (!crypto.timingSafeEqual(digest, expected)) {
+              throw new Error(`SRI mismatch for ${key}`);
+            }
+            const file = safeName(name, pkg.version);
+            fs.writeFileSync(path.join('vendor/tarballs', file), bytes);
             entries.push({
               package: name,
               version: pkg.version,
               file,
-              sha512,
-              npmIntegrity: pkg.integrity ?? null,
-              npmResolved: pkg.resolved ?? null
+              sha512: digest.toString('hex'),
+              npmIntegrity: pkg.integrity,
+              npmResolved: pkg.resolved
             });
           }
+
           entries.sort((a,b) => `${a.package}@${a.version}`.localeCompare(`${b.package}@${b.version}`));
           const lockBytes = fs.readFileSync('package-lock.json');
           const packageLockSha512 = crypto.createHash('sha512').update(lockBytes).digest('hex');
@@ -100,10 +109,15 @@ jobs:
             tarballs: entries
           };
           fs.writeFileSync('vendor/manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-          console.log(`Packed ${entries.length} exact package tarballs`);
+          console.log(`Downloaded and SRI-verified ${entries.length} exact published npm tarballs`);
           for (const e of entries) console.log(`${e.package}@${e.version} -> ${e.file}`);
           JS
           node /tmp/vendor.mjs
+
+      - name: Seed self-contained npm cache
+        shell: bash
+        run: |
+          set -euo pipefail
           for f in vendor/tarballs/*.tgz; do
             npm cache add "$f" --cache vendor/npm-cache --offline --audit=false --fund=false --registry https://registry.invalid/
           done
@@ -113,6 +127,10 @@ jobs:
         env:
           NPM_CONFIG_OFFLINE: "true"
           NPM_CONFIG_REGISTRY: "https://registry.invalid/"
+          HTTP_PROXY: "http://127.0.0.1:9"
+          HTTPS_PROXY: "http://127.0.0.1:9"
+          ALL_PROXY: "http://127.0.0.1:9"
+          NO_PROXY: ""
         run: |
           set -euo pipefail
           rm -rf node_modules
